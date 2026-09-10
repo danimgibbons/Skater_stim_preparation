@@ -1,0 +1,24 @@
+{
+  "enabled": false,
+  "_note": "Default overlay config. Replace image names as needed.",
+  "overlays": [
+    {
+      "image": "static_overlays/camera1_overlay.png",
+      "opacity": 1.0,
+      "cameras": ["camera1"],
+      "chunks": ["big*_small*"]
+    },
+    {
+      "image": "static_overlays/camera2_overlay.png",
+      "opacity": 1.0,
+      "cameras": ["camera2"],
+      "chunks": ["big*_small*"]
+    },
+    {
+      "image": "static_overlays/camera3_overlay.png",
+      "opacity": 1.0,
+      "cameras": ["camera3"],
+      "chunks": ["big*_small*"]
+    }
+  ]
+}

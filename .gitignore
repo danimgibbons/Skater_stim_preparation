@@ -5,12 +5,19 @@ __pycache__/
 # macOS
 .DS_Store
 
-# Local video data and generated outputs
-Vids/input/
-Vids/output/
+# Local data and generated outputs
+Vids/
+input/
+output/
 *.mp4
 *.mov
 *.m4v
+*.h5
+*.hdf5
+*.png
+*.jpg
+*.jpeg
+*.xlsx
 
 # Generated masks and rendered frames
 masks/
@@ -20,3 +27,6 @@ frame_*.png
 .venv/
 env/
 venv/
+
+# Machine-specific data location (copy the example to create this)
+pipeline_config.json

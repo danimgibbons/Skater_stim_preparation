@@ -1,0 +1,24 @@
+{
+  "enabled": true,
+  "_note": "Image paths are relative to this folder.",
+  "overlays": [
+    {
+      "image": "camera1_overlay.png",
+      "opacity": 1.0,
+      "cameras": ["camera1"],
+      "chunks": ["big*_small*"]
+    },
+    {
+      "image": "camera2_overlay.png",
+      "opacity": 1.0,
+      "cameras": ["camera2"],
+      "chunks": ["big*_small*"]
+    },
+    {
+      "image": "camera3_overlay.png",
+      "opacity": 1.0,
+      "cameras": ["camera3"],
+      "chunks": ["big*_small*"]
+    }
+  ]
+}

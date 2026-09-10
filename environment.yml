@@ -5,6 +5,7 @@ dependencies:
   - python>=3.10
   - ffmpeg
   - numpy
+  - h5py
   - pillow
   - opencv
   - scipy
