@@ -1,0 +1,27 @@
+{
+  "enabled": false,
+  "_note": "Only PNG images are supported. Set mask_skater per overlay.",
+  "overlays": [
+    {
+      "image": "overlays/camera1_overlay.png",
+      "opacity": 1.0,
+      "mask_skater": true,
+      "cameras": ["camera1"],
+      "chunks": ["big*_small*"]
+    },
+    {
+      "image": "overlays/camera2_overlay.png",
+      "opacity": 1.0,
+      "mask_skater": true,
+      "cameras": ["camera2"],
+      "chunks": ["big*_small*"]
+    },
+    {
+      "image": "overlays/camera3_overlay.png",
+      "opacity": 1.0,
+      "mask_skater": false,
+      "cameras": ["camera3"],
+      "chunks": ["big*_small*"]
+    }
+  ]
+}

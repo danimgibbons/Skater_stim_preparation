@@ -13,12 +13,12 @@ from .video import (
     chunk_sort_key,
     get_video_duration,
     normalization_filter,
+    overlay_output_dir,
+    overlay_output_path,
+    overlay_output_suffix,
     require_tool,
     run_command,
     small_chunk_dir,
-    static_overlay_output_dir,
-    static_overlay_output_path,
-    static_overlay_output_suffix,
 )
 
 def camera_switch_candidates(
@@ -27,26 +27,21 @@ def camera_switch_candidates(
     base: str,
 ) -> list[Path]:
     """Return source candidates for one switched-viewpoint clip."""
-    static_overlay_path = static_overlay_output_path(
+    overlaid_path = overlay_output_path(
         args,
         camera_name,
         base,
-        args.static_overlay_set,
+        args.overlay_set,
     )
-    if args.static_overlay_set is not None:
-        return [static_overlay_path]
-    non_static_candidates = [
-        args.output_dir / camera_name / "overlaid" / f"{base}_cleaned_overlay.mp4",
-        args.output_dir / camera_name / "overlaid" / f"{base}_overlay.mp4",
+    if args.overlay_set is not None:
+        return [overlaid_path]
+    non_overlay_candidates = [
         args.output_dir / camera_name / "cleaned" / f"{base}_cleaned.mp4",
         small_chunk_dir(args, camera_name) / f"{base}.mp4",
     ]
-    if args.no_static_overlays:
-        return non_static_candidates
-    return [
-        static_overlay_path,
-        *non_static_candidates,
-    ]
+    if args.no_overlays:
+        return non_overlay_candidates
+    return [overlaid_path, *non_overlay_candidates]
 
 
 def camera_switch_source(args: argparse.Namespace, camera_name: str, base: str) -> Path:
@@ -78,22 +73,21 @@ def requested_camera_switch_bases(args: argparse.Namespace) -> list[str] | None:
 def camera_switch_bases_for_camera(args: argparse.Namespace, camera_name: str) -> set[str]:
     """Return switchable small-chunk stems available for one camera."""
     bases = set()
-    if args.static_overlay_set is not None:
+    if args.overlay_set is not None:
         source_dirs = [
-            static_overlay_output_dir(
+            overlay_output_dir(
                 args,
                 camera_name,
-                args.static_overlay_set,
+                args.overlay_set,
             )
         ]
     else:
         source_dirs = [
-            args.output_dir / camera_name / "overlaid",
             args.output_dir / camera_name / "cleaned",
             small_chunk_dir(args, camera_name),
         ]
-        if not args.no_static_overlays:
-            source_dirs.insert(0, static_overlay_output_dir(args, camera_name, None))
+        if not args.no_overlays:
+            source_dirs.insert(0, overlay_output_dir(args, camera_name, None))
     for source_dir in source_dirs:
         if not source_dir.exists():
             continue
@@ -122,11 +116,11 @@ def camera_switch_bases(args: argparse.Namespace, camera_names: list[str]) -> li
             f"{camera_name}: {len(bases)}"
             for camera_name, bases in bases_by_camera.items()
         )
-        if args.static_overlay_set is not None:
+        if args.overlay_set is not None:
             raise FileNotFoundError(
-                "No complete camera-cut chunks found for static overlay set "
-                f"{args.static_overlay_set!r} matching {args.chunk_pattern!r}. "
-                "Run the static overlay stage with the same --static-overlay-set "
+                "No complete camera-cut chunks found for overlay set "
+                f"{args.overlay_set!r} matching {args.chunk_pattern!r}. "
+                "Run the overlays stage with the same --overlay-set "
                 f"first. Available per camera: {counts or '(none)'}."
             )
         raise FileNotFoundError(
@@ -158,8 +152,8 @@ def create_camera_switch_video_for_base(
     ]
     output_dir = args.output_dir / "final"
     output_stem = f"{base}_switch_{args.cut_frames}f"
-    if args.static_overlay_set is not None:
-        suffix = static_overlay_output_suffix(args.static_overlay_set).lstrip("_")
+    if args.overlay_set is not None:
+        suffix = overlay_output_suffix(args.overlay_set).lstrip("_")
         output_stem = f"{output_stem}_{suffix}"
     if args.camera_cut_mode != "random":
         output_stem = f"{output_stem}_{args.camera_cut_mode}"
@@ -241,6 +235,10 @@ def create_camera_switch_video_for_base(
             "yuv420p",
             str(output_video),
         ]
+    )
+    print(
+        f"Creating camera-cut video: {base}, {len(segments)} segments -> "
+        f"{output_video}"
     )
     run_command(cmd, dry_run=args.dry_run)
     if args.dry_run:

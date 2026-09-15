@@ -2,8 +2,14 @@
 
 import argparse
 import subprocess
+import time
 
-from .config import load_video_geometry
+from .config import (
+    PROGRESS_INTERVAL_SECONDS,
+    format_duration,
+    load_video_geometry,
+    progress_summary,
+)
 from .video import (
     camera_dirs,
     camera_output_root,
@@ -56,6 +62,10 @@ def clean_background(args: argparse.Namespace) -> None:
             in_pipe = subprocess.Popen(
                 [
                     "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-nostats",
                     "-i",
                     str(video_path),
                     "-f",
@@ -69,6 +79,10 @@ def clean_background(args: argparse.Namespace) -> None:
             out_pipe = subprocess.Popen(
                 [
                     "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-nostats",
                     "-y",
                     "-f",
                     "rawvideo",
@@ -95,6 +109,8 @@ def clean_background(args: argparse.Namespace) -> None:
 
             frame_size = width * height * 3
             frame_count = 0
+            video_started_at = time.perf_counter()
+            last_progress_at = video_started_at
             if in_pipe.stdout is None or out_pipe.stdin is None:
                 raise RuntimeError("Could not open ffmpeg pipes.")
 
@@ -107,9 +123,28 @@ def clean_background(args: argparse.Namespace) -> None:
                 result = frame * mask + clean * (1 - mask)
                 out_pipe.stdin.write(np.clip(result, 0, 255).astype(np.uint8).tobytes())
                 frame_count += 1
+                now = time.perf_counter()
+                if now - last_progress_at >= PROGRESS_INTERVAL_SECONDS:
+                    print(
+                        progress_summary(
+                            "  Cleaning progress",
+                            frame_count,
+                            0,
+                            video_started_at,
+                        ),
+                        flush=True,
+                    )
+                    last_progress_at = now
 
             in_pipe.stdout.close()
             out_pipe.stdin.close()
-            in_pipe.wait()
-            out_pipe.wait()
-            print(f"Frames processed: {frame_count}")
+            input_returncode = in_pipe.wait()
+            output_returncode = out_pipe.wait()
+            if input_returncode != 0 or output_returncode != 0:
+                raise RuntimeError(f"FFmpeg failed while cleaning: {video_path}")
+            elapsed = time.perf_counter() - video_started_at
+            rate = frame_count / elapsed if elapsed > 0 else 0.0
+            print(
+                f"Finished cleaning: {frame_count} frames in "
+                f"{format_duration(elapsed)} ({rate:.2f} frames/s) -> {output_path}"
+            )

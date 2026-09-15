@@ -6,11 +6,10 @@ from pathlib import Path
 
 from .background import clean_background
 from .camera_cut import create_camera_switch_video
-from .config import DEFAULT_STAGES, STAGES
+from .config import DEFAULT_STAGES, STAGES, available_overlay_sets
 from .export_masks import export_frame_masks
-from .mask_overlay import create_mask_overlay
+from .overlays import render_overlays
 from .preprocess import cut_big_chunks, cut_small_chunks
-from .static_overlays import render_static_overlays
 from .video import configure_data_paths, show_configured_paths
 
 
@@ -19,8 +18,7 @@ STAGE_RUNNERS = {
     "cut_small": cut_small_chunks,
     "clean_bg": clean_background,
     "export_masks": export_frame_masks,
-    "mask_overlay": create_mask_overlay,
-    "static_overlays": render_static_overlays,
+    "overlays": render_overlays,
     "camera_cut": create_camera_switch_video,
 }
 
@@ -42,11 +40,11 @@ def parse_kernel(value: str) -> list[int]:
     return parts
 
 
-def parse_static_overlay_set_name(value: str) -> str:
-    """Parse a safe static overlay set folder name."""
+def parse_overlay_set_name(value: str) -> str:
+    """Parse a safe overlay set folder name."""
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", value):
         raise argparse.ArgumentTypeError(
-            "Static overlay set names may only contain letters, numbers, dots, "
+            "Overlay set names may only contain letters, numbers, dots, "
             "underscores, and hyphens"
         )
     return value
@@ -122,23 +120,26 @@ def main() -> None:
     parser.add_argument("--mask-threshold", type=int, default=50)
     parser.add_argument("--blur-kernel", type=parse_kernel, default=[21, 21])
     parser.add_argument("--close-kernel", type=parse_kernel, default=[3, 3])
-    parser.add_argument("--color-tolerance", type=int, default=10)
     parser.add_argument(
-        "--static-overlay-set",
-        type=parse_static_overlay_set_name,
+        "--overlay-set",
+        type=parse_overlay_set_name,
         default=None,
         help=(
-            "Named folder under input/static_overlays to use for static overlays, "
-            "such as conditionA. If omitted, input/static_overlays.json is used."
+            "Named folder under input/overlays to use for PNG overlays, such as "
+            "conditionA. If omitted, input/overlays.json is used."
         ),
     )
     parser.add_argument(
-        "--no-static-overlays",
+        "--list-overlay-sets",
+        action="store_true",
+        help="List named folders under input/overlays and exit.",
+    )
+    parser.add_argument(
+        "--no-overlays",
         action="store_true",
         help=(
-            "During camera_cut, ignore default static-overlaid clips and use "
-            "overlaid/cleaned/small sources instead. Cannot be combined with "
-            "--static-overlay-set."
+            "During camera_cut, ignore default overlaid clips and use "
+            "cleaned/small sources instead. Cannot be combined with --overlay-set."
         ),
     )
     parser.add_argument(
@@ -185,6 +186,15 @@ def main() -> None:
     if args.show_paths:
         show_configured_paths(args)
         raise SystemExit(0)
+    if args.list_overlay_sets:
+        overlay_sets = available_overlay_sets(args.input_dir)
+        if overlay_sets:
+            print("Available overlay sets:")
+            for overlay_set in overlay_sets:
+                print(f"  {overlay_set}")
+        else:
+            print(f"No overlay sets found under: {args.input_dir / 'overlays'}")
+        raise SystemExit(0)
 
     steps = args.steps or DEFAULT_STAGES
     if "all" in steps:
@@ -197,8 +207,8 @@ def main() -> None:
         parser.error("--small-index requires --big-index")
 
     if "camera_cut" in steps:
-        if args.static_overlay_set and args.no_static_overlays:
-            parser.error("--static-overlay-set cannot be combined with --no-static-overlays")
+        if args.overlay_set and args.no_overlays:
+            parser.error("--overlay-set cannot be combined with --no-overlays")
         if args.camera_cut_chunks and (
             args.big_index is not None or args.small_index is not None
         ):

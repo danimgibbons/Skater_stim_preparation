@@ -9,7 +9,12 @@ from .config import (
     load_video_geometry,
     progress_summary,
 )
-from .video import camera_dirs, crop_image_array, processed_source_videos
+from .video import (
+    camera_dirs,
+    crop_image_array,
+    processed_source_videos,
+    small_chunk_dir,
+)
 
 
 def export_frame_masks(args: argparse.Namespace) -> None:
@@ -34,25 +39,16 @@ def export_frame_masks(args: argparse.Namespace) -> None:
     stage_frame_count = 0
     for camera_input_dir in camera_dirs(args.input_dir):
         empty_frame_path = camera_input_dir / "empty_frame.png"
-        overlay_mask_path = camera_input_dir / "overlay_mask.png"
-        if not empty_frame_path.exists() or not overlay_mask_path.exists():
-            print(f"Skipping {camera_input_dir.name}: no empty_frame.png/overlay_mask.png")
+        if not empty_frame_path.exists():
+            print(f"Skipping {camera_input_dir.name}: no empty_frame.png")
             continue
 
         ref = cv2.imread(str(empty_frame_path), cv2.IMREAD_COLOR)
-        background_mask = cv2.imread(str(overlay_mask_path), cv2.IMREAD_UNCHANGED)
         if ref is None:
             raise RuntimeError(f"Cannot read empty frame: {empty_frame_path}")
-        if background_mask is None:
-            raise RuntimeError(f"Cannot read overlay mask: {overlay_mask_path}")
-        if background_mask.ndim == 2:
-            background_mask = cv2.cvtColor(background_mask, cv2.COLOR_GRAY2BGRA)
-        elif background_mask.shape[2] == 3:
-            background_mask = cv2.cvtColor(background_mask, cv2.COLOR_BGR2BGRA)
 
         crop = geometry.crops.get(camera_input_dir.name)
         ref = crop_image_array(ref, crop)
-        background_mask = crop_image_array(background_mask, crop)
 
         source_videos = processed_source_videos(args, camera_input_dir.name)
         if not source_videos:
@@ -74,7 +70,6 @@ def export_frame_masks(args: argparse.Namespace) -> None:
             video_started_at = time.perf_counter()
             last_progress_at = video_started_at
             video_ref = None
-            video_background_mask = None
             frame_idx = 0
             while True:
                 ret, frame = cap.read()
@@ -83,9 +78,6 @@ def export_frame_masks(args: argparse.Namespace) -> None:
 
                 if video_ref is None:
                     video_ref = align_image_to_frame(ref, frame, cv2.INTER_LINEAR)
-                    video_background_mask = align_image_to_frame(
-                        background_mask, frame, cv2.INTER_NEAREST
-                    )
 
                 diff = cv2.absdiff(frame.astype("float32"), video_ref.astype("float32"))
                 diff = cv2.GaussianBlur(diff, tuple(args.blur_kernel), 0)
@@ -105,9 +97,10 @@ def export_frame_masks(args: argparse.Namespace) -> None:
                     largest_blob[labels == largest_label] = 255
                     skater_mask = largest_blob
 
-                final_mask = video_background_mask.copy()
-                final_mask[skater_mask == 255] = [255, 255, 255, 255]
-                cv2.imwrite(str(output_dir / f"frame_{frame_idx:06d}.png"), final_mask)
+                cv2.imwrite(
+                    str(output_dir / f"frame_{frame_idx:06d}.png"),
+                    skater_mask,
+                )
                 frame_idx += 1
                 now = time.perf_counter()
                 if now - last_progress_at >= PROGRESS_INTERVAL_SECONDS:
@@ -134,8 +127,7 @@ def export_frame_masks(args: argparse.Namespace) -> None:
     if processed_videos == 0:
         raise FileNotFoundError(
             "No mask export inputs were processed. Check that --input-dir contains "
-            "camera "
-            "empty_frame.png/overlay_mask.png files and that --output-dir contains "
+            "camera empty_frame.png files and that --output-dir contains "
             f"small chunks under camera*/small/ matching {args.chunk_pattern!r}."
         )
 

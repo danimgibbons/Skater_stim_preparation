@@ -1,22 +1,25 @@
 {
-  "enabled": false,
-  "_note": "Default overlay config. Replace image names as needed.",
+  "enabled": true,
+  "_note": "Alternative A. PNG paths are relative to this folder.",
   "overlays": [
     {
-      "image": "static_overlays/camera1_overlay.png",
+      "image": "camera1_overlay.png",
       "opacity": 1.0,
+      "mask_skater": true,
       "cameras": ["camera1"],
       "chunks": ["big*_small*"]
     },
     {
-      "image": "static_overlays/camera2_overlay.png",
+      "image": "camera2_overlay.png",
       "opacity": 1.0,
+      "mask_skater": true,
       "cameras": ["camera2"],
       "chunks": ["big*_small*"]
     },
     {
-      "image": "static_overlays/camera3_overlay.png",
+      "image": "camera3_overlay.png",
       "opacity": 1.0,
+      "mask_skater": true,
       "cameras": ["camera3"],
       "chunks": ["big*_small*"]
     }

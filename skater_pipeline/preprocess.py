@@ -57,6 +57,10 @@ def cut_big_chunks(args: argparse.Namespace) -> None:
                     str(output_file),
                 ]
             )
+            print(
+                f"Cutting big chunk: {camera_name}/big{item['chunk']} -> "
+                f"{output_file}"
+            )
             run_command(cmd, dry_run=args.dry_run)
 
 
@@ -115,4 +119,8 @@ def cut_small_chunks(args: argparse.Namespace) -> None:
                 "192k",
                 str(output_file),
             ]
+            print(
+                f"Cutting small chunk {index + 1}/{num_chunks}: "
+                f"{big_chunk_file} -> {output_file}"
+            )
             run_command(cmd, dry_run=args.dry_run)

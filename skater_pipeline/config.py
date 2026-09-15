@@ -17,35 +17,25 @@ STAGES = [
     "cut_small",
     "clean_bg",
     "export_masks",
-    "mask_overlay",
-    "static_overlays",
+    "overlays",
     "camera_cut",
 ]
 # Frame-by-frame mask export is diagnostic and not part of a normal run.
 DEFAULT_STAGES = [stage for stage in STAGES if stage != "export_masks"]
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v"}
-DEFAULT_COLOR_MAP = {
-    (255, 0, 0): ((255, 0, 0), 0.2),
-    (0, 0, 255): ((0, 0, 255), 0.2),
-    (100, 0, 0): ((255, 0, 0), 0.4),
-    (0, 100, 0): ((0, 255, 0), 0.4),
-    (0, 0, 100): ((0, 0, 255), 0.4),
-    (0, 0, 0): ((0, 255, 255), 0.4),
-}
 DEFAULT_INPUT_DIR = Path("Vids/input")
 DEFAULT_OUTPUT_DIR = Path("Vids/output")
 DEFAULT_CONFIG_PATH = Path("pipeline_config.json")
 GEOMETRY_CONFIG_FILENAME = "video_geometry.json"
-STATIC_OVERLAY_CONFIG_FILENAME = "static_overlays.json"
-STATIC_OVERLAY_ROOT_DIR = "static_overlays"
-STATIC_OVERLAY_ROOT_DIR_ALIASES = ("static_overlays", "static overlays")
-STATIC_OVERLAY_SUFFIX = "_static_overlay"
+OVERLAY_CONFIG_FILENAME = "overlays.json"
+OVERLAY_ROOT_DIR = "overlays"
+OVERLAY_SUFFIX = "_overlay"
 CONFIG_TEMPLATE = {
     "data_root": "/path/to/mounted/secure/server/skater-data",
     "input_dir": "input",
     "output_dir": "output",
 }
-PROGRESS_INTERVAL_SECONDS = 5.0
+PROGRESS_INTERVAL_SECONDS = 30.0
 
 
 def format_duration(seconds: float) -> str:
@@ -100,7 +90,7 @@ class VideoGeometry:
 
 
 @dataclass(frozen=True)
-class StaticOverlay:
+class Overlay:
     image: Path
     x: str
     y: str
@@ -110,11 +100,12 @@ class StaticOverlay:
     opacity: float
     cameras: list[str] | None
     chunks: list[str] | None
+    mask_skater: bool
 
 
 @dataclass(frozen=True)
-class StaticOverlayConfig:
-    overlays: list[StaticOverlay]
+class OverlayConfig:
+    overlays: list[Overlay]
     path: Path | None
     set_name: str | None
 
@@ -198,7 +189,7 @@ def parse_filter_expression(value: object, field: str, default: str) -> str:
 
 
 def parse_optional_overlay_dimension(value: object, field: str) -> int | None:
-    """Parse optional static overlay scaling dimensions."""
+    """Parse optional overlay scaling dimensions."""
     if value in (None, "auto"):
         return None
     return parse_positive_int(value, field)
@@ -294,12 +285,12 @@ def load_video_geometry(input_dir: Path) -> VideoGeometry:
     return VideoGeometry(crops=crops, normalization=normalization, path=path)
 
 
-def parse_static_overlay(
+def parse_overlay(
     value: object,
     image_root: Path,
     index: int,
-) -> StaticOverlay:
-    """Parse one transparent image overlay from static_overlays.json."""
+) -> Overlay:
+    """Parse one PNG overlay from overlays.json."""
     if not isinstance(value, dict):
         raise ValueError(f"overlays[{index}] must be a JSON object")
     field_prefix = f"overlays[{index}]"
@@ -309,12 +300,14 @@ def parse_static_overlay(
     image = Path(image_value).expanduser()
     if not image.is_absolute():
         image = image_root / image
+    if image.suffix.lower() != ".png":
+        raise ValueError(f"{field_prefix}.image must refer to a PNG file")
 
     opacity = float(value.get("opacity", 1.0))
     if opacity < 0 or opacity > 1:
         raise ValueError(f"{field_prefix}.opacity must be between 0 and 1")
 
-    return StaticOverlay(
+    return Overlay(
         image=image,
         x=parse_filter_expression(value.get("x"), f"{field_prefix}.x", "0"),
         y=parse_filter_expression(value.get("y"), f"{field_prefix}.y", "0"),
@@ -333,51 +326,67 @@ def parse_static_overlay(
         opacity=opacity,
         cameras=parse_optional_string_list(value.get("cameras"), f"{field_prefix}.cameras"),
         chunks=parse_optional_string_list(value.get("chunks"), f"{field_prefix}.chunks"),
+        mask_skater=parse_bool(
+            value.get("mask_skater"),
+            f"{field_prefix}.mask_skater",
+        ),
     )
 
 
-def static_overlay_config_location(
+def overlay_config_location(
     input_dir: Path,
     overlay_set: str | None,
 ) -> tuple[Path, Path]:
-    """Return the config path and relative-image root for a static overlay set."""
+    """Return the config path and relative-image root for an overlay set."""
     if overlay_set is None:
-        return input_dir / STATIC_OVERLAY_CONFIG_FILENAME, input_dir
-    config_dir = static_overlay_set_dir(input_dir, overlay_set)
-    return config_dir / STATIC_OVERLAY_CONFIG_FILENAME, config_dir
+        return input_dir / OVERLAY_CONFIG_FILENAME, input_dir
+    config_dir = overlay_set_dir(input_dir, overlay_set)
+    return config_dir / OVERLAY_CONFIG_FILENAME, config_dir
 
 
-def static_overlay_set_dir(input_dir: Path, overlay_set: str) -> Path:
-    """Return the folder for a named static overlay set."""
-    for root_dir in STATIC_OVERLAY_ROOT_DIR_ALIASES:
-        candidate = input_dir / root_dir / overlay_set
-        if candidate.exists():
-            return candidate
-    return input_dir / STATIC_OVERLAY_ROOT_DIR / overlay_set
+def overlay_set_dir(input_dir: Path, overlay_set: str) -> Path:
+    """Return the folder for a named overlay set."""
+    return input_dir / OVERLAY_ROOT_DIR / overlay_set
 
 
-def load_static_overlay_config(
+def available_overlay_sets(input_dir: Path) -> list[str]:
+    """Return named overlay folders that contain an overlays.json file."""
+    root = input_dir / OVERLAY_ROOT_DIR
+    if not root.exists():
+        return []
+    return sorted(
+        path.name
+        for path in root.iterdir()
+        if path.is_dir() and (path / OVERLAY_CONFIG_FILENAME).is_file()
+    )
+
+
+def load_overlay_config(
     input_dir: Path,
     overlay_set: str | None = None,
-) -> StaticOverlayConfig:
-    """Load optional transparent static overlay settings."""
-    path, image_root = static_overlay_config_location(input_dir, overlay_set)
+) -> OverlayConfig:
+    """Load optional PNG overlay settings."""
+    path, image_root = overlay_config_location(input_dir, overlay_set)
     if not path.exists():
-        return StaticOverlayConfig(overlays=[], path=None, set_name=overlay_set)
+        return OverlayConfig(overlays=[], path=None, set_name=overlay_set)
 
     with path.open("r", encoding="utf-8") as f:
         config = json.load(f)
     if not isinstance(config, dict):
-        raise ValueError(f"{STATIC_OVERLAY_CONFIG_FILENAME} must contain a JSON object")
+        raise ValueError(f"{OVERLAY_CONFIG_FILENAME} must contain a JSON object")
     if config.get("enabled", True) is False:
-        return StaticOverlayConfig(overlays=[], path=path, set_name=overlay_set)
+        return OverlayConfig(overlays=[], path=path, set_name=overlay_set)
 
     overlays_config = config.get("overlays", [])
     if not isinstance(overlays_config, list):
-        raise ValueError("static_overlays.json field 'overlays' must be a list")
+        raise ValueError("overlays.json field 'overlays' must be a list")
 
     overlays = [
-        parse_static_overlay(overlay_config, image_root, index)
+        parse_overlay(overlay_config, image_root, index)
         for index, overlay_config in enumerate(overlays_config)
     ]
-    return StaticOverlayConfig(overlays=overlays, path=path, set_name=overlay_set)
+    return OverlayConfig(
+        overlays=overlays,
+        path=path,
+        set_name=overlay_set,
+    )

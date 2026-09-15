@@ -1,22 +1,25 @@
 {
   "enabled": true,
-  "_note": "Image paths are relative to this folder.",
+  "_note": "Alternative B. PNG paths are relative to this folder.",
   "overlays": [
     {
       "image": "camera1_overlay.png",
       "opacity": 1.0,
+      "mask_skater": false,
       "cameras": ["camera1"],
       "chunks": ["big*_small*"]
     },
     {
       "image": "camera2_overlay.png",
       "opacity": 1.0,
+      "mask_skater": false,
       "cameras": ["camera2"],
       "chunks": ["big*_small*"]
     },
     {
       "image": "camera3_overlay.png",
       "opacity": 1.0,
+      "mask_skater": false,
       "cameras": ["camera3"],
       "chunks": ["big*_small*"]
     }

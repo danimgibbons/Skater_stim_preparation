@@ -6,6 +6,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -14,11 +15,12 @@ from .config import (
     DEFAULT_CONFIG_PATH,
     DEFAULT_INPUT_DIR,
     DEFAULT_OUTPUT_DIR,
-    STATIC_OVERLAY_SUFFIX,
+    OVERLAY_SUFFIX,
+    PROGRESS_INTERVAL_SECONDS,
     VIDEO_EXTENSIONS,
     CropBox,
     Normalization,
-    StaticOverlay,
+    Overlay,
     load_path_config,
     resolve_data_path,
     write_config_template,
@@ -44,8 +46,8 @@ def normalization_filter(normalization: Normalization) -> str:
     )
 
 
-def static_overlay_image_filter(
-    overlay: StaticOverlay,
+def overlay_image_filter(
+    overlay: Overlay,
     input_index: int,
     video_width: int,
     video_height: int,
@@ -63,13 +65,13 @@ def static_overlay_image_filter(
     return ",".join(filters) + f"[ov{input_index}]"
 
 
-def static_overlay_video_filter(
+def overlay_video_filter(
     base_label: str,
-    overlay: StaticOverlay,
+    overlay: Overlay,
     input_index: int,
     output_label: str,
 ) -> str:
-    """Return the FFmpeg overlay filter for one prepared static image."""
+    """Return the FFmpeg overlay filter for one prepared PNG."""
     return (
         f"{base_label}[ov{input_index}]"
         f"overlay=x={overlay.x}:y={overlay.y}:shortest=1:format=auto"
@@ -77,42 +79,42 @@ def static_overlay_video_filter(
     )
 
 
-def static_overlay_output_suffix(overlay_set: str | None) -> str:
-    """Return the filename suffix used for static-overlaid clips."""
+def overlay_output_suffix(overlay_set: str | None) -> str:
+    """Return the filename suffix used for overlaid clips."""
     if overlay_set is None:
-        return STATIC_OVERLAY_SUFFIX
-    return f"{STATIC_OVERLAY_SUFFIX}_{overlay_set}"
+        return OVERLAY_SUFFIX
+    return f"{OVERLAY_SUFFIX}_{overlay_set}"
 
 
-def static_overlay_output_dir(
+def overlay_output_dir(
     args: argparse.Namespace,
     camera_name: str,
     overlay_set: str | None,
 ) -> Path:
-    """Return the output folder for one static overlay set."""
-    root = args.output_dir / camera_name / "static_overlaid"
+    """Return the output folder for one overlay set."""
+    root = args.output_dir / camera_name / "overlaid"
     if overlay_set is None:
         return root
     return root / overlay_set
 
 
-def static_overlay_output_path(
+def overlay_output_path(
     args: argparse.Namespace,
     camera_name: str,
     base: str,
     overlay_set: str | None,
 ) -> Path:
-    """Return the static-overlaid clip path for one camera/chunk/set."""
+    """Return the overlaid clip path for one camera/chunk/set."""
     return (
-        static_overlay_output_dir(args, camera_name, overlay_set)
-        / f"{base}{static_overlay_output_suffix(overlay_set)}.mp4"
+        overlay_output_dir(args, camera_name, overlay_set)
+        / f"{base}{overlay_output_suffix(overlay_set)}.mp4"
     )
 
 
-def strip_static_overlay_suffix(stem: str) -> str:
-    """Normalize a static-overlaid stem back to its source chunk stem."""
+def strip_overlay_suffix(stem: str) -> str:
+    """Normalize an overlaid stem back to its source chunk stem."""
     match = re.fullmatch(
-        rf"(.+){re.escape(STATIC_OVERLAY_SUFFIX)}(?:_[A-Za-z0-9_.-]+)?",
+        rf"(.+){re.escape(OVERLAY_SUFFIX)}(?:_[A-Za-z0-9_.-]+)?",
         stem,
     )
     return match.group(1) if match else stem
@@ -120,8 +122,8 @@ def strip_static_overlay_suffix(stem: str) -> str:
 
 def base_chunk_name(stem: str) -> str:
     """Reduce a processed filename stem to its original small-chunk name."""
-    stem = strip_static_overlay_suffix(stem)
-    for suffix in ("_cleaned_overlay", "_overlay", "_cleaned"):
+    stem = strip_overlay_suffix(stem)
+    for suffix in ("_cleaned",):
         if stem.endswith(suffix):
             return stem[: -len(suffix)]
     return stem
@@ -204,10 +206,22 @@ def require_tool(name: str) -> None:
 
 
 def run_command(cmd: list[str], dry_run: bool = False) -> None:
-    """Run a command or print it when previewing a video-processing stage."""
-    print(" ".join(cmd))
-    if not dry_run:
-        subprocess.run(cmd, check=True)
+    """Run quietly, retaining complete command output for dry-run previews."""
+    if dry_run:
+        print(f"Command: {shlex.join(cmd)}")
+        return
+    if cmd and Path(cmd[0]).name == "ffmpeg":
+        cmd = [
+            cmd[0],
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-stats_period",
+            str(PROGRESS_INTERVAL_SECONDS),
+            "-stats",
+            *cmd[1:],
+        ]
+    subprocess.run(cmd, check=True)
 
 
 def timecode_to_seconds(timecode: str, fps: int) -> float:
